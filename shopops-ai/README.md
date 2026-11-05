@@ -4,7 +4,7 @@
 
 Built with **n8n**, **Supabase (Postgres)**, **Telegram** and **LLMs via OpenRouter**.
 
-> 🎥 **Loom walkthrough:** _add your link here_
+>
 
 ![Architecture](docs/architecture.png)
 
