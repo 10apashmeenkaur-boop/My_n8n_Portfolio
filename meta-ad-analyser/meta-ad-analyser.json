@@ -1,0 +1,824 @@
+{
+  "name": "Meta Ad Analyser – Ad Library + Gemini video",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "0a0452cc-38fd-48a2-bc5e-32177f19281b",
+      "name": "Run Analysis",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1296,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9c3fece2-15c7-4069-b919-3259e86f06da",
+              "name": "adLibraryUrl",
+              "value": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=IN&is_targeted_country=false&media_type=all&q=%22MySivi%22&search_type=keyword_exact_phrase&sort_data[mode]=total_impressions&sort_data[direction]=desc",
+              "type": "string"
+            },
+            {
+              "id": "8d0ad97c-e43e-4c7d-bdb9-8467fdab14ad",
+              "name": "resultsLimit",
+              "value": 30,
+              "type": "number"
+            },
+            {
+              "id": "67b6b193-510c-4f3e-95e7-04f4e6c2067e",
+              "name": "analyzeTopN",
+              "value": 8,
+              "type": "number"
+            },
+            {
+              "id": "b9e54148-6eed-4159-ad56-c22a45288168",
+              "name": "brandFilter",
+              "value": "mysivi",
+              "type": "string"
+            },
+            {
+              "id": "8434c9ef-3e34-4943-9634-a1a8e92d5f45",
+              "name": "brandName",
+              "value": "MySivi",
+              "type": "string"
+            },
+            {
+              "id": "9ed7b5bd-2fc4-45a2-bfa4-1de51516b0b5",
+              "name": "brandContext",
+              "value": "an AI English-speaking tutor app in India. Its Meta campaigns are app-install campaigns with a ₹1 trial offer, aimed at Indians who understand English but are not confident speaking it, often addressed in their own regional language.",
+              "type": "string"
+            },
+            {
+              "id": "e365fd46-2a0a-47e4-b2db-53a75fe6d0e0",
+              "name": "aiModel",
+              "value": "gemini-3.6-flash",
+              "type": "string"
+            },
+            {
+              "id": "2f2bf6af-073e-4e9c-9bde-b6f462c48d1f",
+              "name": "fallbackModel",
+              "value": "gemini-3.8-flash",
+              "type": "string"
+            },
+            {
+              "id": "6f00d6e5-ff0d-4635-b931-b27a4c4b3f29",
+              "name": "reportModel",
+              "value": "gemini-3.6-flash",
+              "type": "string"
+            },
+            {
+              "id": "58aa09b5-2009-4ea4-a26e-8e92eed97583",
+              "name": "maxCreativeMB",
+              "value": 14,
+              "type": "number"
+            },
+            {
+              "id": "c4f07d07-fc0d-4e51-873d-160117b3aab4",
+              "name": "waitSeconds",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "7b341088-fa3c-4e7b-9981-40045c26c475",
+              "name": "longevityCapDays",
+              "value": 90,
+              "type": "number"
+            },
+            {
+              "id": "fd7bfaca-4b64-4d37-bb9e-a4f8a7997f47",
+              "name": "performanceWeight",
+              "value": 0.6,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5020d1fa-6cb7-44e3-9782-2399d0b01b60",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1088,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/apify~facebook-ads-scraper/run-sync-get-dataset-items?timeout=280",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ startUrls: [{ url: $json.adLibraryUrl }], resultsLimit: $json.resultsLimit, activeStatus: 'active', isDetailsPerAd: false, onlyTotal: false, includeAboutPage: false }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "f3e865d5-0c66-44ee-95ee-972e0a35ca72",
+      "name": "Scrape Ad Library (Apify)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -864,
+        608
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "Xvz070HjBy5CC7g0",
+          "name": "Query Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────\n// CLEAN, DEDUPE & SCORE ADS\n// Input : raw items from Apify's Facebook Ads Library Scraper\n// Output: one clean item per ad, sorted by performanceScore\n//\n// Meta hides spend/reach for normal (non-political) ads in India,\n// so we score on three proxies Meta *does* leak:\n//   1. impressionRank – the Ad Library URL is sorted by total impressions,\n//                       so result order = Meta's own impression ranking\n//   2. daysActive     – advertisers kill losing ads fast; survivors pay back\n//   3. scale          – how many live ads reuse the same copy, or how many\n//                       versions Meta groups under one ad (collationCount):\n//                       the team is putting more money behind that concept\n// ─────────────────────────────────────────────────────────────\nconst cfg = $('Config').first().json;\nconst brand = String(cfg.brandFilter || '').toLowerCase().trim();\nconst capDays = Number(cfg.longevityCapDays) || 90;\nconst nowSec = Date.now() / 1000;\n\nconst isPlaceholder = (s) => !s || /\\{\\{[^}]*\\}\\}/.test(String(s)); // {{product.name}} etc. in DCO ads\nconst tidy = (s) => String(s || '').replace(/\\s+/g, ' ').trim();\n\n// Facebook video URLs carry a base64 \"efg\" param with the asset id + duration\nfunction decodeEfg(url) {\n  try {\n    const m = String(url || '').match(/[?&]efg=([^&]+)/);\n    if (!m) return {};\n    const j = JSON.parse(Buffer.from(decodeURIComponent(m[1]), 'base64').toString('utf8'));\n    return { assetId: j.xpv_asset_id, durationSec: j.duration_s };\n  } catch (e) {\n    return {};\n  }\n}\n\nfunction detectLanguage(t) {\n  if (/[ಀ-೿]/.test(t)) return 'Kannada';\n  if (/[ఀ-౿]/.test(t)) return 'Telugu';\n  if (/[஀-௿]/.test(t)) return 'Tamil';\n  if (/[ঀ-৿]/.test(t)) return 'Bengali';\n  if (/[઀-૿]/.test(t)) return 'Gujarati';\n  if (/[ഀ-ൿ]/.test(t)) return 'Malayalam';\n  if (/[਀-੿]/.test(t)) return 'Punjabi';\n  if (/[଀-୿]/.test(t)) return 'Odia';\n  if (/[ऀ-ॿ]/.test(t)) return /(करा|आणि|सोबत|मध्ये|आजच)/.test(t) ? 'Marathi' : 'Hindi';\n  if (/\\b(korun|apnake|bujhiye|parben|theke|korlei)\\b/i.test(t)) return 'Bengali (Roman script)';\n  if (/\\b(karo|mein|sirf|seekho|bolo|hai|aap|nahi|kaise)\\b/i.test(t)) return 'Hinglish';\n  return 'English';\n}\n\nfunction firstSentence(t) {\n  const m = String(t || '').match(/^(.+?[.!?।])(\\s|$)/);\n  return tidy(m ? m[1] : String(t || '').slice(0, 120));\n}\n\n// Same primary text = same concept (DCO ads reuse copy with different videos)\nfunction conceptKey(text) {\n  return String(text || '')\n    .toLowerCase()\n    .normalize('NFKC')\n    .replace(/[^\\p{L}\\p{M}\\p{N}\\s]/gu, '')\n    .replace(/\\s+/g, ' ')\n    .trim()\n    .slice(0, 80);\n}\n\nfunction toSec(v, formatted) {\n  const n = Number(v);\n  if (n > 1e12) return n / 1000; // milliseconds\n  if (n > 1e8) return n;         // seconds\n  const p = Date.parse(formatted || v);\n  return isNaN(p) ? null : p / 1000;\n}\n\n// ── 1. sanity-check the scrape ───────────────────────────────\nconst raw = $input.all().map((it) => it.json || {});\nconst apifyError = raw.find((r) => r.error && !r.adArchiveID && !r.adArchiveId);\nconst rows = raw.filter((r) => r.adArchiveID || r.adArchiveId);\nif (!rows.length) {\n  const why = apifyError ? ` Apify said: ${JSON.stringify(apifyError.error).slice(0, 300)}` : '';\n  throw new Error('Apify returned no ads. Check the Apify credential, your free credit, and that adLibraryUrl in Config opens in a browser.' + why);\n}\n\n// ── 2. filter to the brand, drop duplicates ──────────────────\nconst seenIds = new Set();\nconst kept = rows.filter((r) => {\n  const id = String(r.adArchiveID || r.adArchiveId);\n  if (seenIds.has(id)) return false;\n  seenIds.add(id);\n  const page = String(r.pageName || (r.snapshot && r.snapshot.pageName) || '').toLowerCase();\n  return (!brand || page.includes(brand)) && r.isActive !== false;\n});\nif (!kept.length) {\n  const pages = [...new Set(rows.map((r) => r.pageName || (r.snapshot && r.snapshot.pageName)).filter(Boolean))].slice(0, 5);\n  throw new Error(`No ads matched brandFilter \"${brand}\". Pages found: ${pages.join(', ') || 'none'}. Fix brandFilter in Config.`);\n}\n\n// ── 3. normalise each ad ─────────────────────────────────────\nconst ads = kept.map((r, idx) => {\n  const s = r.snapshot || {};\n  const cards = Array.isArray(s.cards) && s.cards.length\n    ? s.cards\n    : [{ title: s.title, body: s.body && s.body.text, ctaText: s.ctaText, ctaType: s.ctaType, linkUrl: s.linkUrl }];\n  const c0 = cards.find((c) => !isPlaceholder(c.body)) || cards[0] || {};\n\n  const headline = tidy([c0.title, s.title].find((t) => !isPlaceholder(t)) || '');\n  const primaryText = tidy([c0.body, s.body && s.body.text].find((t) => !isPlaceholder(t)) || '');\n\n  // unique creatives inside this (often DCO) ad\n  const seen = new Set();\n  const videos = [];\n  for (const c of [...cards, ...(s.videos || [])]) {\n    const url = c.videoSdUrl || c.videoHdUrl; // SD first: smaller, plenty for analysis\n    if (!url) continue;\n    const meta = decodeEfg(url);\n    const key = meta.assetId || url.split('?')[0];\n    if (seen.has(key)) continue;\n    seen.add(key);\n    videos.push({ url, key, thumb: c.videoPreviewImageUrl, ...meta });\n  }\n  const images = [...new Set([\n    ...cards.map((c) => c.originalImageUrl || c.resizedImageUrl),\n    ...(s.images || []).map((i) => i.originalImageUrl || i.resizedImageUrl),\n  ].filter(Boolean))];\n\n  const start = toSec(r.startDate, r.startDateFormatted) || nowSec;\n  const endRaw = toSec(r.endDate, r.endDateFormatted);\n  const end = endRaw && endRaw <= nowSec + 86400 ? endRaw : nowSec;\n  const link = c0.linkUrl || s.linkUrl || '';\n  const adId = String(r.adArchiveID || r.adArchiveId);\n  const daysActive = Math.max(1, Math.round((end - start) / 86400));\n  const creativeKey = (videos[0] && String(videos[0].key)) || (images[0] && images[0].split('?')[0]) || `copy:${conceptKey(primaryText || headline)}`;\n\n  return {\n    adId,\n    adLibraryLink: `https://www.facebook.com/ads/library/?id=${adId}`,\n    pageName: r.pageName || s.pageName || '',\n    impressionRank: idx + 1,\n    startDate: new Date(start * 1000).toISOString().slice(0, 10),\n    daysActive,\n    maturity: daysActive < 7 ? 'new (unproven)' : daysActive < 30 ? 'scaling' : 'proven',\n    collationCount: Number(r.collationCount) || 1,\n    language: detectLanguage(`${headline} ${primaryText}`),\n    headline,\n    primaryText,\n    copyHook: firstSentence(primaryText),\n    ctaButton: c0.ctaText || s.ctaText || '',\n    ctaType: c0.ctaType || s.ctaType || '',\n    store: /itunes|apps\\.apple/.test(link) ? 'iOS' : /play\\.google/.test(link) ? 'Android' : 'Web/other',\n    platforms: (Array.isArray(r.publisherPlatform) ? r.publisherPlatform : []).join(', '),\n    displayFormat: s.displayFormat || '',\n    mediaType: videos.length ? 'video' : images.length ? 'image' : 'text',\n    creativeVariants: videos.length || images.length || 1,\n    videoDurationSec: videos[0] ? videos[0].durationSec ?? null : null,\n    videoUrl: videos[0] ? videos[0].url : '',\n    imageUrl: images[0] || (videos[0] && videos[0].thumb) || '',\n    creativeKey,\n    conceptKey: conceptKey(primaryText || headline),\n  };\n});\n\n// ── 4. concept-level stats + performance score (0–100) ───────\nconst concepts = {};\nfor (const a of ads) (concepts[a.conceptKey] = concepts[a.conceptKey] || []).push(a);\nfor (const a of ads) a.scaleUnits = Math.max(concepts[a.conceptKey].length, a.collationCount);\nconst maxScale = Math.max(...ads.map((a) => a.scaleUnits));\nconst N = ads.length;\n\nfor (const a of ads) {\n  const g = concepts[a.conceptKey];\n  a.adsInConcept = g.length;\n  a.conceptLabel = `${a.language}: ${g[0].headline || g[0].copyHook}`.slice(0, 90);\n  a.rankScore = Math.round(N > 1 ? ((N - a.impressionRank) / (N - 1)) * 100 : 100);\n  a.longevityScore = Math.round((Math.min(a.daysActive, capDays) / capDays) * 100);\n  a.scaleScore = Math.round((a.scaleUnits / maxScale) * 100);\n  a.performanceScore = Math.round(0.5 * a.rankScore + 0.35 * a.longevityScore + 0.15 * a.scaleScore);\n}\n\nads.sort((x, y) => y.performanceScore - x.performanceScore || x.impressionRank - y.impressionRank);\nreturn ads.map((a) => ({ json: a }));\n"
+      },
+      "id": "c4003da3-7056-459b-8bdd-7bedfd3cca9a",
+      "name": "Clean & Score Ads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────\n// PICK TOP N *UNIQUE* CREATIVES FOR THE AI\n// The same video often runs under several ad IDs (DCO, A/B copies,\n// language variants of the caption). Sending it to the model twice\n// wastes free-tier quota and gives no new information, so we skip\n// any ad whose creative was already picked.\n// ─────────────────────────────────────────────────────────────\nconst n = Number($('Config').first().json.analyzeTopN) || 8;\nconst seen = new Set();\nconst picked = [];\nfor (const item of $input.all()) {\n  const key = item.json.creativeKey;\n  if (seen.has(key)) continue;\n  seen.add(key);\n  picked.push({ json: item.json });\n  if (picked.length >= n) break;\n}\nreturn picked;\n"
+      },
+      "id": "d4a96123-a2a1-4c90-80fc-9b3833fcdf16",
+      "name": "Top N Unique Creatives",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "d6177bed-5549-44b0-9f7e-9157d9e4a610",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -208,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.videoUrl || $json.imageUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 90000
+        }
+      },
+      "id": "e85c2ed0-6210-474b-8f5e-e16ac675d0ea",
+      "name": "Download Creative",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        48,
+        832
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────\n// BUILD GEMINI REQUEST (one ad per loop iteration)\n// Video ads → the whole MP4 goes to Gemini, which reads the frames AND\n// hears the audio. That matters: in a talking-head / skit ad the hook\n// is what is SAID in the first 3 seconds, not the thumbnail.\n// Degrades gracefully: video too big or failed → preview frame →\n// copy only. The source used is recorded on every row.\n// ─────────────────────────────────────────────────────────────\nconst ad = $('Loop Over Items').first().json;\nconst cfg = $('Config').first().json;\nconst input = $input.first();\nconst maxBytes = (Number(cfg.maxCreativeMB) || 14) * 1024 * 1024;\nconst UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';\n\nlet media = null;      // { inline_data: { mime_type, data } }\nlet source = 'copy only';\nlet mediaIssue = '';\n\n// 1) whatever \"Download Creative\" fetched (the video for video ads)\ntry {\n  if (input.binary && input.binary.data) {\n    const buf = await this.helpers.getBinaryDataBuffer(0, 'data');\n    const mime = String(input.binary.data.mimeType || '').split(';')[0].trim().toLowerCase();\n    const isVideo = mime.startsWith('video/') || (ad.mediaType === 'video' && !mime.startsWith('image/'));\n    if (!buf.length) {\n      mediaIssue = 'download was empty';\n    } else if (buf.length > maxBytes) {\n      mediaIssue = `creative is ${(buf.length / 1048576).toFixed(1)} MB (limit ${cfg.maxCreativeMB || 14} MB)`;\n    } else if (isVideo) {\n      media = { inline_data: { mime_type: mime.startsWith('video/') ? mime : 'video/mp4', data: buf.toString('base64') } };\n      source = 'full video (frames + audio) + copy';\n    } else {\n      media = { inline_data: { mime_type: mime.startsWith('image/') ? mime : 'image/jpeg', data: buf.toString('base64') } };\n      source = 'image + copy';\n    }\n  } else {\n    const err = input.json && input.json.error;\n    mediaIssue = err ? `download failed: ${typeof err === 'string' ? err : err.message || 'error'}` : 'no creative URL';\n  }\n} catch (e) {\n  mediaIssue = `could not read download: ${e.message}`;\n}\n\n// 2) video unusable → fall back to its preview frame\nif (!media && ad.mediaType === 'video' && ad.imageUrl) {\n  try {\n    const res = await this.helpers.httpRequest({\n      method: 'GET', url: ad.imageUrl, encoding: 'arraybuffer', returnFullResponse: true,\n      headers: { 'User-Agent': UA }, timeout: 30000,\n    });\n    const buf = Buffer.from(res.body);\n    const mime = String((res.headers && res.headers['content-type']) || 'image/jpeg').split(';')[0];\n    if (buf.length && buf.length <= maxBytes) {\n      media = { inline_data: { mime_type: mime.startsWith('image/') ? mime : 'image/jpeg', data: buf.toString('base64') } };\n      source = 'video preview frame + copy';\n    }\n  } catch (e) {\n    mediaIssue += ' · preview frame also failed';\n  }\n}\n\nconst mediaNote = source.startsWith('full video')\n  ? `The attached file is the full ${ad.videoDurationSec ? ad.videoDurationSec + '-second ' : ''}video ad. Watch AND listen to it. Use timestamps in seconds.`\n  : source === 'video preview frame + copy'\n    ? `This is a VIDEO ad but only its preview frame could be attached (${mediaIssue}). You cannot hear the audio: base the hook on the frame + headline + first line of copy, leave spoken fields as \"none\", and say so in \"notes\".`\n    : source === 'image + copy'\n      ? 'The attached image is the ad creative.'\n      : `No creative could be attached (${mediaIssue || 'none available'}). Analyse the text only and say so in \"notes\".`;\n\nconst prompt = `You are a performance-marketing creative analyst for ${cfg.brandName}, ${cfg.brandContext}\n\nBreak this ad down into HOOK → BODY → CTA. ${mediaNote}\n\nAd facts from the Ad Library (do not contradict these):\n- Page: ${ad.pageName}\n- Caption language (detected): ${ad.language}\n- Headline: ${ad.headline || 'none'}\n- Primary text (caption): ${ad.primaryText || 'none'}\n- CTA button: ${ad.ctaButton || 'none'}\n- Store: ${ad.store}\n\nDefinitions:\n- HOOK = the first ~3 seconds (or the first thing seen on a static ad): what is said, what text is on screen, what is shown.\n- BODY = everything between the hook and the call to action: the beats that build desire and belief.\n- CTA = the moment the viewer is told what to do (spoken and/or on screen), plus the offer and any urgency.\n\nRules:\n- Judge ONLY the creative. You are not told how long it ran or how many impressions it got, on purpose.\n- Quote spoken words in their original language and script, then translate.\n- Be strict with scores: 9-10 must be rare. No generic praise (\"engaging\", \"catchy\") — be specific to this ad.\n- If something is not present write \"none\". Never invent words that are not said or shown.`;\n\n// Structured output: Gemini is forced to return exactly this shape.\nconst S = (description) => ({ type: 'STRING', description });\nconst schema = {\n  type: 'OBJECT',\n  properties: {\n    spoken_language: S('language(s) spoken in the ad, e.g. \"Hindi + English\"; \"none\" if no speech'),\n    hook: {\n      type: 'OBJECT',\n      properties: {\n        ends_at_sec: { type: 'NUMBER', description: 'second where the hook ends (0 for static ads)' },\n        spoken_original: S('words spoken in the hook, original language/script, or \"none\"'),\n        spoken_english: S('English translation of the spoken hook, or \"none\"'),\n        on_screen_text: S('text shown on screen during the hook, or \"none\"'),\n        visual: S('what the viewer sees in the hook'),\n        type: { type: 'STRING', enum: ['pain_point', 'relatable_scenario', 'curiosity_question', 'social_proof', 'price_offer', 'transformation', 'fear_of_judgement', 'demo', 'authority', 'other'] },\n        why_it_stops_the_scroll: S('one specific sentence'),\n      },\n      required: ['spoken_original', 'spoken_english', 'on_screen_text', 'visual', 'type', 'why_it_stops_the_scroll'],\n    },\n    body: {\n      type: 'OBJECT',\n      properties: {\n        beats: {\n          type: 'ARRAY',\n          description: '3-6 beats in order',\n          items: { type: 'OBJECT', properties: { at_sec: { type: 'NUMBER' }, what_happens: S('short') }, required: ['what_happens'] },\n        },\n        summary: S('2 sentences: how the body builds desire after the hook'),\n        key_claims: { type: 'ARRAY', items: { type: 'STRING' }, description: 'max 3' },\n        proof: S('proof used (numbers, app demo, testimonial, before/after) or \"none\"'),\n        shows_app: { type: 'BOOLEAN', description: 'is the app UI shown?' },\n      },\n      required: ['beats', 'summary', 'key_claims', 'proof', 'shows_app'],\n    },\n    cta: {\n      type: 'OBJECT',\n      properties: {\n        at_sec: { type: 'NUMBER' },\n        spoken_or_onscreen: S('the CTA as said/shown, original language + English, or \"none\"'),\n        offer: S('e.g. \"₹1 trial\", or \"none\"'),\n        urgency: S('urgency/scarcity used, or \"none\"'),\n      },\n      required: ['spoken_or_onscreen', 'offer', 'urgency'],\n    },\n    format: { type: 'STRING', enum: ['ugc_talking_head', 'skit', 'app_screen_demo', 'animation', 'testimonial', 'street_interview', 'slideshow', 'static_image', 'other'] },\n    angle: S('core persuasion angle in under 10 words'),\n    target_persona: S('who this ad is for, one short sentence'),\n    scores: {\n      type: 'OBJECT',\n      properties: {\n        hook_strength: { type: 'INTEGER', description: '1-10' },\n        clarity: { type: 'INTEGER', description: '1-10' },\n        offer_clarity: { type: 'INTEGER', description: '1-10' },\n        cultural_fit: { type: 'INTEGER', description: '1-10' },\n      },\n      required: ['hook_strength', 'clarity', 'offer_clarity', 'cultural_fit'],\n    },\n    why_it_works: S('1-2 sentences specific to this creative'),\n    weakness: S('the single biggest weakness, specific'),\n    notes: S('caveats, e.g. what could not be checked'),\n  },\n  required: ['spoken_language', 'hook', 'body', 'cta', 'format', 'angle', 'target_persona', 'scores', 'why_it_works', 'weakness', 'notes'],\n};\n\nconst parts = [];\nif (media) parts.push(media); // media before text, as Google recommends\nparts.push({ text: prompt });\n\nreturn [{\n  json: {\n    adId: ad.adId,\n    source,\n    mediaIssue,\n    model: cfg.aiModel,\n    fallbackModel: cfg.fallbackModel,\n    geminiBody: {\n      contents: [{ role: 'user', parts }],\n      generationConfig: { responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 8192 },\n    },\n  },\n}];\n"
+      },
+      "id": "78e127e9-745d-4c0e-a183-73d4b70ec468",
+      "name": "Build Gemini Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $json.model }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.geminiBody) }}",
+        "options": {
+          "timeout": 240000
+        }
+      },
+      "id": "c9c7fae2-c1ae-405f-b37c-8fb09cf89dd3",
+      "name": "Gemini – Analyse Ad",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        832
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ldlNpR1N8ZepTUEn",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $('Build Gemini Request').first().json.fallbackModel }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Build Gemini Request').first().json.geminiBody) }}",
+        "options": {
+          "timeout": 240000
+        }
+      },
+      "id": "c400fa55-6933-4363-adc0-ed9d2a4467a8",
+      "name": "Gemini – Fallback Model",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        704,
+        992
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ldlNpR1N8ZepTUEn",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────\n// PARSE GEMINI RESPONSE → flat fields merged back onto the ad\n// Receives output from either the primary or the fallback model node.\n// Never throws: a failed ad is kept with aiError filled in, so one bad\n// video can't kill the whole run.\n// ─────────────────────────────────────────────────────────────\nconst ad = $('Loop Over Items').first().json;\nconst req = $('Build Gemini Request').first().json;\nconst res = $input.first().json || {};\n\nfunction errText(r) {\n  const e = r.error;\n  if (!e) return '';\n  if (typeof e === 'string') return e;\n  return e.message || e.description || JSON.stringify(e).slice(0, 300);\n}\n\nlet a = null;\nlet aiError = '';\ntry {\n  const cand = res.candidates && res.candidates[0];\n  const text = ((cand && cand.content && cand.content.parts) || [])\n    .filter((p) => typeof p.text === 'string' && !p.thought)\n    .map((p) => p.text)\n    .join('');\n  if (!text) throw new Error(cand && cand.finishReason ? `model stopped: ${cand.finishReason}` : 'empty response');\n  const s = text.indexOf('{');\n  const e = text.lastIndexOf('}');\n  a = JSON.parse(text.slice(s, e + 1));\n} catch (err) {\n  aiError = errText(res) || (res.promptFeedback && res.promptFeedback.blockReason ? `blocked: ${res.promptFeedback.blockReason}` : '') || err.message;\n}\n\nconst none = (v) => (v == null || /^none$/i.test(String(v).trim()) ? '' : String(v).trim());\nconst hook = (a && a.hook) || {};\nconst body = (a && a.body) || {};\nconst cta = (a && a.cta) || {};\nconst sc = (a && a.scores) || {};\nconst vals = ['hook_strength', 'clarity', 'offer_clarity', 'cultural_fit']\n  .map((k) => Number(sc[k]))\n  .filter((n) => n >= 1 && n <= 10);\nconst creativeScore = vals.length ? Math.round((vals.reduce((p, c) => p + c, 0) / vals.length) * 10) : null;\nconst beats = Array.isArray(body.beats)\n  ? body.beats.map((b) => `${b.at_sec != null ? b.at_sec + 's: ' : ''}${b.what_happens}`).join(' → ')\n  : '';\n\nreturn [{\n  json: {\n    ...ad,\n    aiAnalysed: !!a,\n    analysedFrom: a ? req.source : 'failed',\n    modelUsed: res.modelVersion || '',\n    aiError,\n    spokenLanguage: none(a && a.spoken_language),\n    hookSpoken: none(hook.spoken_original),\n    hookEnglish: none(hook.spoken_english),\n    hookOnScreen: none(hook.on_screen_text),\n    hookVisual: none(hook.visual),\n    hookType: hook.type || '',\n    hookEndsAt: hook.ends_at_sec ?? null,\n    hookWhy: none(hook.why_it_stops_the_scroll),\n    bodyBeats: beats,\n    bodySummary: none(body.summary),\n    keyClaims: Array.isArray(body.key_claims) ? body.key_claims.join(' | ') : '',\n    proof: none(body.proof),\n    showsApp: body.shows_app ?? null,\n    ctaInCreative: none(cta.spoken_or_onscreen),\n    ctaAt: cta.at_sec ?? null,\n    offer: none(cta.offer),\n    urgency: none(cta.urgency),\n    creativeFormat: (a && a.format) || '',\n    angle: none(a && a.angle),\n    targetPersona: none(a && a.target_persona),\n    hookStrength: sc.hook_strength ?? null,\n    clarity: sc.clarity ?? null,\n    offerClarity: sc.offer_clarity ?? null,\n    culturalFit: sc.cultural_fit ?? null,\n    creativeScore,\n    whyItWorks: none(a && a.why_it_works),\n    weakness: none(a && a.weakness),\n    aiNotes: none(a && a.notes),\n  },\n}];\n"
+      },
+      "id": "dfcbcb59-f75c-47c6-9d10-36db29ba0c20",
+      "name": "Parse Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ $('Config').first().json.waitSeconds }}"
+      },
+      "id": "52730bee-b521-4229-9068-a379f30a50e1",
+      "name": "Wait (free-tier rate limit)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1152,
+        832
+      ],
+      "webhookId": "e509b47a-74d6-4d8e-b1ff-6e07a2bb6e50"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────\n// RANK & PICK THE BEST AD\n// finalScore = performanceWeight × performanceScore (market evidence)\n//            + (1 − performanceWeight) × creativeScore (AI judgement)\n// Evidence is weighted higher than AI opinion on purpose: Meta's\n// delivery algorithm has already \"voted\" with real money.\n// ─────────────────────────────────────────────────────────────\nconst cfg = $('Config').first().json;\nconst w = Math.min(1, Math.max(0, Number(cfg.performanceWeight ?? 0.6)));\n\nconst all = $('Clean & Score Ads').all().map((i) => i.json);\nconst byId = {};\nfor (const it of $input.all()) byId[it.json.adId] = it.json;\n\nconst merged = all.map((ad) => byId[ad.adId] || {\n  ...ad, aiAnalysed: false, creativeScore: null,\n  analysedFrom: 'not analysed (outside top N or duplicate creative)',\n});\nfor (const r of merged) {\n  r.finalScore = r.creativeScore == null ? null : Math.round(w * r.performanceScore + (1 - w) * r.creativeScore);\n}\nmerged.sort((a, b) => (b.finalScore ?? -1) - (a.finalScore ?? -1) || b.performanceScore - a.performanceScore);\nconst best = merged.find((r) => r.finalScore != null);\n\nreturn merged.map((r, i) => ({\n  json: {\n    final_rank: i + 1,\n    best_ad: r === best ? '★ BEST' : '',\n    ad_id: r.adId,\n    ad_library_link: r.adLibraryLink,\n    page: r.pageName,\n    language: r.spokenLanguage || r.language,\n    caption_language: r.language,\n    concept: r.conceptLabel,\n    headline: r.headline,\n    impression_rank: r.impressionRank,\n    days_active: r.daysActive,\n    maturity: r.maturity,\n    start_date: r.startDate,\n    ads_in_concept: r.adsInConcept,\n    meta_versions: r.collationCount,\n    creative_variants: r.creativeVariants,\n    media_type: r.mediaType,\n    video_sec: r.videoDurationSec,\n    performance_score: r.performanceScore,\n    creative_score: r.creativeScore,\n    final_score: r.finalScore,\n    hook_spoken: r.hookSpoken || '',\n    hook_english: r.hookEnglish || '',\n    hook_on_screen: r.hookOnScreen || '',\n    hook_visual: r.hookVisual || '',\n    hook_type: r.hookType || '',\n    hook_why: r.hookWhy || '',\n    body_beats: r.bodyBeats || '',\n    body_summary: r.bodySummary || '',\n    key_claims: r.keyClaims || '',\n    proof: r.proof || '',\n    cta_in_creative: r.ctaInCreative || '',\n    cta_button: r.ctaButton,\n    offer: r.offer || '',\n    urgency: r.urgency || '',\n    format: r.creativeFormat || '',\n    angle: r.angle || '',\n    target_persona: r.targetPersona || '',\n    hook_strength: r.hookStrength ?? null,\n    clarity: r.clarity ?? null,\n    offer_clarity: r.offerClarity ?? null,\n    cultural_fit: r.culturalFit ?? null,\n    why_it_works: r.whyItWorks || '',\n    weakness: r.weakness || '',\n    copy_hook: r.copyHook,\n    primary_text: r.primaryText,\n    store: r.store,\n    platforms: r.platforms,\n    thumbnail_url: r.imageUrl || '',\n    analysed_from: r.analysedFrom,\n    model_used: r.modelUsed || '',\n    ai_notes: r.aiNotes || '',\n    ai_error: r.aiError || '',\n  },\n}));\n"
+      },
+      "id": "d2817adf-18fe-4190-8502-8d3dadbe2f14",
+      "name": "Rank & Pick Best",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "fileName": "meta_ad_analysis.xlsx",
+          "sheetName": "Ads"
+        }
+      },
+      "id": "23de6c8b-025a-4b27-9c01-a95b316a2037",
+      "name": "Export Sheet (.xlsx)",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        304,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────\n// BUILD INSIGHTS PROMPT (one call for the whole report)\n// ─────────────────────────────────────────────────────────────\nconst cfg = $('Config').first().json;\nconst rows = $input.all().map((i) => i.json);\nconst analysed = rows.filter((r) => r.final_score != null);\n\nconst compact = analysed.map((r) => ({\n  final_rank: r.final_rank,\n  ad_id: r.ad_id,\n  language: r.language,\n  impression_rank: r.impression_rank,\n  days_active: r.days_active,\n  maturity: r.maturity,\n  ads_in_concept: r.ads_in_concept,\n  meta_versions: r.meta_versions,\n  video_sec: r.video_sec,\n  performance_score: r.performance_score,\n  creative_score: r.creative_score,\n  final_score: r.final_score,\n  analysed_from: r.analysed_from,\n  hook_spoken: r.hook_spoken,\n  hook_english: r.hook_english,\n  hook_on_screen: r.hook_on_screen,\n  hook_visual: r.hook_visual,\n  hook_type: r.hook_type,\n  body_beats: r.body_beats,\n  proof: r.proof,\n  cta_in_creative: r.cta_in_creative,\n  offer: r.offer,\n  format: r.format,\n  angle: r.angle,\n  why_it_works: r.why_it_works,\n  weakness: r.weakness,\n}));\n\n// coverage of ALL scraped ads (not just analysed ones)\nconst coverage = {};\nfor (const r of rows) {\n  const k = r.caption_language || r.language;\n  const c = (coverage[k] = coverage[k] || { ads: 0, best_impression_rank: 999, longest_days_active: 0 });\n  c.ads += 1;\n  c.best_impression_rank = Math.min(c.best_impression_rank, r.impression_rank);\n  c.longest_days_active = Math.max(c.longest_days_active, r.days_active);\n}\n\nconst prompt = `You are the head of growth creative at ${cfg.brandName}, ${cfg.brandContext}\nAn automated pipeline scraped ${cfg.brandName}'s ACTIVE Meta ads (the Ad Library search in Config) and had Gemini watch and listen to the top ones.\n\nHow the numbers were built (use this to reason, do not repeat it at length):\n- impression_rank: position in the Ad Library sorted by total impressions (1 = most impressions).\n- days_active / maturity: how long the ad has survived. Losing ads get switched off quickly. \"new (unproven)\" < 7 days, \"scaling\" < 30, \"proven\" ≥ 30.\n- ads_in_concept / meta_versions: how many live ads reuse this copy / how many versions Meta groups under it → the team is scaling it.\n- performance_score (0-100) = 50% impression rank + 35% longevity (capped at ${cfg.longevityCapDays || 90} days) + 15% scale.\n- creative_score (0-100) = Gemini's BLIND rating of the creative (it was not shown any performance numbers).\n- final_score = ${Math.round((cfg.performanceWeight ?? 0.6) * 100)}% performance_score + ${Math.round((1 - (cfg.performanceWeight ?? 0.6)) * 100)}% creative_score.\n- analysed_from says whether the model saw the full video with audio, only a frame, or only the caption. Weight conclusions accordingly.\n\nANALYSED ADS:\n${JSON.stringify(compact, null, 1)}\n\nLANGUAGE COVERAGE (by caption) ACROSS ALL ${rows.length} SCRAPED ADS:\n${JSON.stringify(coverage, null, 1)}\n\nWrite a sharp report in Markdown with exactly these sections (use ## headings):\n## Why this is the best ad\nName the ad_id, quote its hook (original + English), and justify the pick with its numbers. Say clearly whether it is a new ad with high impressions but unproven, or an old proven ad that may be fatiguing. Name the runner-up and why it lost.\n## Winning patterns\n3-5 bullets. Each bullet names the ad_ids that show it.\n## Where the weaker ads lose\n2-3 bullets, each naming ad_ids.\n## Where performance and creative quality disagree\nAny ad Meta is spending on that the model rated weak (or vice versa) and what that suggests.\n## Gaps & opportunities\nLanguages, angles or formats ${cfg.brandName} is not using yet, based on the coverage data.\n## 3 new ad scripts\nBuilt on the winning pattern. For each: target language, 0-3s hook (original language + English), body beats (3 bullets), CTA, format, and which winning ad it is modelled on.\n## 2 A/B tests for next week\nHypothesis, what changes, success metric (e.g. CTR, cost per install, 3-second view rate).\n\nRules: only use numbers that appear in the data above. No generic advice such as \"use a strong hook\". Under 800 words. Do not add a title.`;\n\nreturn [{\n  json: {\n    model: cfg.reportModel,\n    fallbackModel: cfg.fallbackModel,\n    geminiBody: {\n      contents: [{ role: 'user', parts: [{ text: prompt }] }],\n      generationConfig: { maxOutputTokens: 8192 },\n    },\n    analysedCount: analysed.length,\n    totalAds: rows.length,\n  },\n}];\n"
+      },
+      "id": "5a815a8d-cfa8-40d8-aaaa-5c12ad92479c",
+      "name": "Build Insights Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $json.model }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.geminiBody) }}",
+        "options": {
+          "timeout": 240000
+        }
+      },
+      "id": "72816fa8-c7f8-4d4f-9b59-9aaa21cc9519",
+      "name": "Gemini – Insights Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        528,
+        400
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ldlNpR1N8ZepTUEn",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $('Build Insights Prompt').first().json.fallbackModel }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Build Insights Prompt').first().json.geminiBody) }}",
+        "options": {
+          "timeout": 240000
+        }
+      },
+      "id": "acaa1026-56ac-4dc3-b35d-84eefeb7e1de",
+      "name": "Gemini – Insights (fallback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        752,
+        544
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ldlNpR1N8ZepTUEn",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────\n// FORMAT FINAL REPORT (Markdown)\n// The per-ad Hook / Body / CTA breakdown is built straight from the\n// structured data — not re-written by the LLM — so what's in the PDF\n// is exactly what was extracted.\n// ─────────────────────────────────────────────────────────────\nconst cfg = $('Config').first().json;\nconst meta = $('Build Insights Prompt').first().json;\nconst rows = $('Rank & Pick Best').all().map((i) => i.json);\nconst res = $input.first().json || {};\n\nconst cand = res.candidates && res.candidates[0];\nconst aiText = ((cand && cand.content && cand.content.parts) || [])\n  .filter((p) => typeof p.text === 'string' && !p.thought).map((p) => p.text).join('').trim();\nconst errMsg = res.error ? (typeof res.error === 'string' ? res.error : res.error.message || JSON.stringify(res.error)) : 'no response';\nconst insights = aiText || `_AI insights failed (${errMsg}). The scored table and the ad-by-ad breakdown below are still complete._`;\n\nconst esc = (s) => String(s ?? '').replace(/\\|/g, '/').replace(/\\s+/g, ' ').trim();\nconst analysed = rows.filter((r) => r.final_score != null);\nconst best = analysed[0];\n\nconst table = [\n  '| # | Ad | Language | Impr. rank | Days live | Perf. | Creative | **Final** | Hook (EN) |',\n  '|---|---|---|---|---|---|---|---|---|',\n  ...analysed.map((r) => `| ${r.final_rank}${r.best_ad ? ' ★' : ''} | [${r.ad_id}](${r.ad_library_link}) | ${esc(r.language)} | ${r.impression_rank} | ${r.days_active} | ${r.performance_score} | ${r.creative_score} | **${r.final_score}** | ${esc(r.hook_english || r.hook_on_screen || r.copy_hook).slice(0, 90)} |`),\n].join('\\n');\n\nconst bestCard = best ? [\n  `## ★ Winner at a glance: [${best.ad_id}](${best.ad_library_link})`,\n  best.thumbnail_url ? `![Best ad preview](${best.thumbnail_url})` : '',\n  `**Final score ${best.final_score}** (performance ${best.performance_score}, creative ${best.creative_score}) · impression rank #${best.impression_rank} · live ${best.days_active} days (${best.maturity}) · ${esc(best.format)} · ${esc(best.language)}`,\n  '',\n  `- **Hook:** ${esc(best.hook_spoken || best.hook_on_screen) || '—'}${best.hook_english ? ` — _\"${esc(best.hook_english)}\"_` : ''}`,\n  `- **Body:** ${esc(best.body_summary) || '—'}`,\n  `- **CTA:** ${esc(best.cta_in_creative) || esc(best.cta_button) || '—'}${best.offer ? ` · offer: ${esc(best.offer)}` : ''}`,\n].filter(Boolean).join('\\n') : '## Best ad\\n_No ad could be analysed by the AI in this run — see ai_error in the sheet._';\n\nconst perAd = analysed.map((r) => [\n  `### ${r.final_rank}. [${r.ad_id}](${r.ad_library_link})${r.best_ad ? ' ★' : ''}`,\n  `${esc(r.language)} · ${esc(r.format) || r.media_type}${r.video_sec ? ` · ${r.video_sec}s` : ''} · impression rank #${r.impression_rank} · ${r.days_active} days live · final ${r.final_score} · _analysed from: ${r.analysed_from}_`,\n  '',\n  `**HOOK** (${esc(r.hook_type) || '—'})`,\n  r.hook_spoken ? `- Said: ${esc(r.hook_spoken)}${r.hook_english ? ` — _\"${esc(r.hook_english)}\"_` : ''}` : null,\n  r.hook_on_screen ? `- On screen: ${esc(r.hook_on_screen)}` : null,\n  r.hook_visual ? `- Shows: ${esc(r.hook_visual)}` : null,\n  r.hook_why ? `- Why it stops the scroll: ${esc(r.hook_why)}` : null,\n  '',\n  '**BODY**',\n  r.body_beats ? `- Beats: ${esc(r.body_beats)}` : null,\n  r.body_summary ? `- ${esc(r.body_summary)}` : null,\n  r.proof ? `- Proof: ${esc(r.proof)}` : null,\n  '',\n  '**CTA**',\n  `- ${esc(r.cta_in_creative) || 'none in creative'} · button: ${esc(r.cta_button) || '—'}${r.offer ? ` · offer: ${esc(r.offer)}` : ''}${r.urgency ? ` · urgency: ${esc(r.urgency)}` : ''}`,\n  '',\n  `**Works because:** ${esc(r.why_it_works) || '—'}  `,\n  `**Weakness:** ${esc(r.weakness) || '—'}`,\n].filter((l) => l !== null).join('\\n')).join('\\n\\n---\\n\\n');\n\nconst failed = rows.filter((r) => r.ai_error);\nconst failNote = failed.length ? `\\n\\n> ${failed.length} ad(s) could not be analysed: ${failed.map((r) => `${r.ad_id} (${esc(r.ai_error).slice(0, 80)})`).join('; ')}` : '';\n\nconst w = Number(cfg.performanceWeight ?? 0.6);\nconst report = `# ${cfg.brandName} – Meta Ad Library Analysis\nRun ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC · India · active ads · ${meta.totalAds} ads scraped · ${meta.analysedCount} unique creatives analysed by ${cfg.aiModel} · [Source Ad Library search](${cfg.adLibraryUrl})\n\n${bestCard}\n\n## Leaderboard\n_Final = ${Math.round(w * 100)}% performance (impression rank 50% · days live 35% · scale 15%) + ${Math.round((1 - w) * 100)}% creative score (Gemini, blind to performance)._\n\n${table}${failNote}\n\n${insights}\n\n## Ad-by-ad breakdown: Hook → Body → CTA\n\n${perAd}\n`;\n\nreturn [{ json: { report } }];\n"
+      },
+      "id": "98c0d3ad-1f6e-40d7-b1cb-c54a14f4f8cb",
+      "name": "Format Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "report",
+        "options": {
+          "fileName": "meta_ad_report.md"
+        }
+      },
+      "id": "aad9c950-d02a-45da-9f33-f6b4f1bdf8d8",
+      "name": "Export Report (.md)",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "markdownToHtml",
+        "markdown": "={{ $json.report }}",
+        "destinationKey": "html",
+        "options": {
+          "openLinksInNewWindow": true,
+          "simplifiedAutoLink": true,
+          "tables": true
+        }
+      },
+      "id": "5197961b-4920-458e-aa84-71957a0287b5",
+      "name": "Markdown → HTML",
+      "type": "n8n-nodes-base.markdown",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────\n// WRAP THE REPORT IN A PRINTABLE PAGE\n// Open the downloaded .html in Chrome → Ctrl/Cmd+P → Save as PDF.\n// ─────────────────────────────────────────────────────────────\nconst body = $input.first().json.html || '';\nconst css = `\n  @page { size: A4; margin: 16mm 14mm; }\n  * { box-sizing: border-box; }\n  body { font: 13px/1.55 -apple-system, \"Segoe UI\", Roboto, \"Noto Sans\", \"Noto Sans Devanagari\", sans-serif; color: #1d1d1f; max-width: 900px; margin: 0 auto; padding: 24px; }\n  h1 { font-size: 26px; margin: 0 0 4px; }\n  h1 + p { color: #666; font-size: 12px; margin-top: 0; }\n  h2 { font-size: 18px; margin-top: 28px; border-bottom: 2px solid #eee; padding-bottom: 4px; }\n  h3 { font-size: 15px; margin: 20px 0 4px; break-after: avoid; }\n  a { color: #0b57d0; text-decoration: none; }\n  img { max-width: 260px; max-height: 320px; border-radius: 8px; border: 1px solid #ddd; display: block; margin: 8px 0; }\n  table { border-collapse: collapse; width: 100%; font-size: 11.5px; margin: 8px 0; }\n  th, td { border: 1px solid #e3e3e3; padding: 5px 7px; text-align: left; vertical-align: top; }\n  th { background: #f6f6f8; }\n  tr { break-inside: avoid; }\n  blockquote { margin: 10px 0; padding: 8px 12px; background: #fff6e5; border-left: 3px solid #f0a500; }\n  hr { border: 0; border-top: 1px dashed #ddd; margin: 18px 0; }\n  ul { padding-left: 20px; }\n  strong { color: #000; }\n`;\nconst page = `<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>${$('Config').first().json.brandName} – Meta Ad Library Analysis</title><style>${css}</style></head><body>${body}</body></html>`;\nreturn [{ json: { page } }];\n"
+      },
+      "id": "00437bc1-6931-43fb-a326-c828d0281653",
+      "name": "Printable Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "page",
+        "options": {
+          "fileName": "meta_ad_report.html"
+        }
+      },
+      "id": "61ae7c5e-388b-49ce-836f-428cb7a2528a",
+      "name": "Export Report (.html → PDF)",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1648,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Scrape\nGets a brand's live ads from the Facebook Ad Library using Apify (search URL, brand and country are set in Config).\nThe search is sorted by impressions, so the first ads are the ones Meta shows the most.\nMeta doesn't show spend or results for these ads, so this order is the best free signal we have.\nAll settings are in the Config node.\n",
+        "height": 520,
+        "width": 760,
+        "color": 4
+      },
+      "id": "ca9f16e6-43b0-415c-bf8e-d157c16981a6",
+      "name": "Note: Scrape",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1424,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Clean and score\nRemoves duplicates and broken text, and detects the language of each ad.\nEach ad gets a performance score out of 100:\n- 50% how high it ranks on impressions\n- 35% how many days it has been running (capped at 90)\n- 15% how many copies of the same ad are running\nOnly the top 8 different videos go to the AI.\n",
+        "height": 520,
+        "width": 460,
+        "color": 5
+      },
+      "id": "1f382e13-baa9-4ac5-bf8a-8201374a2364",
+      "name": "Note: Score",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## AI watches each ad\nDownloads the video and sends it to Gemini, which watches and listens to it.\nIt returns the hook, body and CTA, plus a creative score out of 100.\nThe AI is not told the performance numbers, so its opinion stays separate.\nIf Gemini is busy it retries, then tries a backup model. If an ad still fails, it is marked and the run continues.\n",
+        "height": 420,
+        "width": 1260,
+        "color": 6
+      },
+      "id": "aa5c903d-998f-4ffa-ab71-71142f304e41",
+      "name": "Note: AI",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        64,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Rank and report\nFinal score = 60% performance + 40% AI creative score.\nReal performance counts more because Meta has already spent money on these ads.\nOutputs an Excel sheet of all ads and a report (open the .html in Chrome and save as PDF).",
+        "height": 240,
+        "width": 516,
+        "color": 3
+      },
+      "id": "b4504c0c-9085-4b0f-996b-47de75dfb9ea",
+      "name": "Note: Report",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        80,
+        32
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Run Analysis": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Scrape Ad Library (Apify)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Ad Library (Apify)": {
+      "main": [
+        [
+          {
+            "node": "Clean & Score Ads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean & Score Ads": {
+      "main": [
+        [
+          {
+            "node": "Top N Unique Creatives",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Top N Unique Creatives": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Rank & Pick Best",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download Creative",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Creative": {
+      "main": [
+        [
+          {
+            "node": "Build Gemini Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Gemini Request": {
+      "main": [
+        [
+          {
+            "node": "Gemini – Analyse Ad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini – Analyse Ad": {
+      "main": [
+        [
+          {
+            "node": "Parse Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gemini – Fallback Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini – Fallback Model": {
+      "main": [
+        [
+          {
+            "node": "Parse Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Analysis": {
+      "main": [
+        [
+          {
+            "node": "Wait (free-tier rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait (free-tier rate limit)": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rank & Pick Best": {
+      "main": [
+        [
+          {
+            "node": "Export Sheet (.xlsx)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Insights Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Insights Prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini – Insights Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini – Insights Report": {
+      "main": [
+        [
+          {
+            "node": "Format Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gemini – Insights (fallback)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini – Insights (fallback)": {
+      "main": [
+        [
+          {
+            "node": "Format Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Report": {
+      "main": [
+        [
+          {
+            "node": "Export Report (.md)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Markdown → HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Markdown → HTML": {
+      "main": [
+        [
+          {
+            "node": "Printable Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Printable Page": {
+      "main": [
+        [
+          {
+            "node": "Export Report (.html → PDF)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0eea7ab2-7286-47f0-af77-1159e531c01b",
+  "meta": {},
+  "nodeGroups": [],
+  "id": "wRtm4Hr4OhlgtAB9",
+  "tags": []
+}
