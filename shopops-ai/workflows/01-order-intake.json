@@ -1,0 +1,273 @@
+{
+  "name": "01 - Order Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 01 - Order Intake\nNew order arrives by webhook (Shopify or any store).\n1. Validate and clean the data\n2. Save customer + order in ONE database call (rule-based risk score)\n3. Stop duplicates\n4. AI checks for fake names / addresses (falls back to rules if the AI fails)\n5. Risky COD orders become `pending_confirmation`, the rest `confirmed`",
+        "height": 260,
+        "width": 420,
+        "color": 5
+      },
+      "id": "549d9c16-ff47-4793-943a-271fd03a0ca7",
+      "name": "Note intake",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -480,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-order",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "6582f4a1-7f53-408b-ad7c-9ec953fbe610",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "ba4d9688-370e-44b6-a35c-b35b309cb919"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const b = $json.body || {};\nconst required = ['order_number','name','phone','amount','payment_method','address','pincode'];\nconst missing = required.filter(k => b[k] === undefined || b[k] === '');\nif (missing.length) throw new Error('Missing fields: ' + missing.join(', '));\n\nconst phone = String(b.phone).replace(/\\D/g, '').slice(-10);\nif (phone.length !== 10) throw new Error('Invalid phone number');\n\nreturn { json: {\n  order_number: String(b.order_number),\n  name: String(b.name).trim(),\n  phone,\n  email: b.email || null,\n  amount: Number(b.amount),\n  payment_method: String(b.payment_method).toLowerCase() === 'cod' ? 'cod' : 'prepaid',\n  address: String(b.address).trim(),\n  pincode: String(b.pincode).trim(),\n  items: b.items || []\n}};"
+      },
+      "id": "fb96fccf-2aa5-4120-b839-9bde95874f9a",
+      "name": "Validate order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/create_order",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"p\": {{ JSON.stringify($json) }} }",
+        "options": {}
+      },
+      "id": "0231bf89-5992-4a6b-92fb-be50fbb43136",
+      "name": "Save order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c99caa68-73de-4587-b6b6-b1fe6dedb495",
+              "leftValue": "={{ $json.duplicate }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "beefa40e-3cd3-4ccc-858e-2ea5fc8e23ff",
+      "name": "New order?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"openrouter/free\",\n  \"messages\": [\n    { \"role\": \"system\", \"content\": \"You review e-commerce orders in India for signs of fake or prank orders (gibberish names, test or dummy addresses, nonsense details). Reply with ONLY a JSON object and no other text: {\\\"suspicious\\\": true or false, \\\"reason\\\": \\\"one short sentence\\\"}\" },\n    { \"role\": \"user\", \"content\": {{ JSON.stringify(\"Name: \" + $('Validate order').item.json.name + \"\\nAddress: \" + $('Validate order').item.json.address + \"\\nPincode: \" + $('Validate order').item.json.pincode + \"\\nAmount: Rs \" + $('Validate order').item.json.amount + \"\\nPayment: \" + $('Validate order').item.json.payment_method) }} }\n  ]\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "4af8a792-5952-4840-a0b1-435ecc06b7bd",
+      "name": "AI fake check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "3",
+          "name": "OpenRouter"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const r = $('Save order').item.json;\n\n// Read the AI's answer safely; if anything fails, fall back to rules only\nlet ai = { suspicious: false, reason: 'AI check unavailable' };\ntry {\n  const text = $json.choices?.[0]?.message?.content ?? '';\n  const match = text.match(/\\{[\\s\\S]*\\}/);\n  if (match) ai = JSON.parse(match[0]);\n} catch (e) {}\n\nlet score = r.rule_score;\nconst reasons = [...r.rule_reasons];\nif (ai.suspicious) { score += 30; reasons.push('AI: ' + ai.reason); }\nscore = Math.min(score, 100);\n\nconst isCod = r.order.payment_method === 'cod';\nconst status = (isCod && score >= 50) ? 'pending_confirmation' : 'confirmed';\n\nreturn { json: {\n  id: r.order.id,\n  order_number: r.order.order_number,\n  status,\n  risk_score: score,\n  risk_reasons: reasons\n}};"
+      },
+      "id": "7a2fa89e-f2ce-4c24-a295-23924702b2ef",
+      "name": "Final decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/orders?id=eq.{{ $json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status, risk_score: $json.risk_score, risk_reasons: $json.risk_reasons, updated_at: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "719591ed-f2ee-4b9c-9b81-0fce78868c25",
+      "name": "Update order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        180
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate order": {
+      "main": [
+        [
+          {
+            "node": "Save order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save order": {
+      "main": [
+        [
+          {
+            "node": "New order?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New order?": {
+      "main": [
+        [
+          {
+            "node": "AI fake check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI fake check": {
+      "main": [
+        [
+          {
+            "node": "Final decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final decision": {
+      "main": [
+        [
+          {
+            "node": "Update order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,1193 @@
+{
+  "name": "02 - Telegram Bot v2",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 02 - Telegram Bot (v2, natural language)\n- **Customer just says hi** → bot asks them to share their phone (📱 button) → finds their orders\n- **Order link** still works (t.me/bot?start=ORD123)\n- **Buttons** confirm / cancel\n- **Plain text** works too: \"yes confirm it\", \"cancel my order\", \"where is my order\", \"I want to return it\"\n- **/admin** in the owner's group makes it the owner chat (alerts go there)\n\nSecurity: phone must be the sender's own (Telegram-verified); orders can only be changed by their owner.",
+        "height": 300,
+        "width": 460,
+        "color": 5
+      },
+      "id": "b5ca90bc-bb55-43d7-8847-35c22c325da3",
+      "name": "Note v2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -520,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "id": "1f42c26d-b263-464f-a1f3-22a7d4ef899f",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        400
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "webhookId": "b0f2a0e8-9ffb-4a86-b26d-782dd7d398a7"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Work out what kind of Telegram update this is.\nconst u = $json;\n\n// Button press (Confirm / Cancel)\nif (u.callback_query) {\n  const cq = u.callback_query;\n  const [action, order_number] = String(cq.data || '').split(':');\n  return { json: { type: 'button', chat_id: cq.message.chat.id, action, order_number, callback_id: cq.id } };\n}\n\nconst m = u.message || {};\nconst chat_id = m.chat?.id;\nif (!chat_id) return { json: { type: 'ignore' } };\nconst isPrivate = (m.chat?.type || 'private') === 'private';\n\n// Customer shared a phone number with the 📱 button.\n// Only trust it if the contact is the sender's own number.\nif (m.contact) {\n  const verified = !!m.contact.user_id && m.contact.user_id === m.from?.id;\n  return { json: { type: 'contact', chat_id, phone: String(m.contact.phone_number || ''), verified } };\n}\n\n// \"/admin@MyBot\" -> \"/admin\"\nconst text = (m.text || '').trim().replace(/^(\\/\\w+)@\\S+/, '$1');\nif (!text) return { json: { type: 'ignore' } };\n\nif (text === '/admin') return { json: { type: 'admin', chat_id } };\n\n// In the owner's group, ignore everything except /admin\nif (!isPrivate) return { json: { type: 'ignore' } };\n\n// Order link: t.me/bot?start=ORD123 sends \"/start ORD123\"\nconst start = text.match(/^\\/start\\s+(\\S+)/);\nif (start) return { json: { type: 'start', chat_id, order_number: start[1] } };\n\n// Everything else is a normal chat message (\"/start\" alone = \"Hi\")\nreturn { json: { type: 'chat', chat_id, text: text === '/start' ? 'Hi' : text } };"
+      },
+      "id": "5788bad9-57cd-4d14-be95-cb2f0a7b78e9",
+      "name": "Route update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "e1692362-b532-4910-8176-531c6fe7a93a",
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "admin",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "admin"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "3782f22f-37ba-416d-b050-f0102299033b",
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "start",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "start"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "47ef514b-120a-48b9-8b4b-c913d982a74d",
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "contact",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "contact"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "afd4b74d-60dc-4b56-a084-e077e7b9daed",
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "button",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "button"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "f5bd84af-6b32-44c3-9717-28afab6d06a5",
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "chat",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "chat"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cadf901b-e263-4afb-8df1-119d427883ec",
+      "name": "Type of update",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        440,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/set_admin",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_chat_id: $json.chat_id }) }}",
+        "options": {}
+      },
+      "id": "3cca7247-cb88-4dae-8a08-8e7269164dc5",
+      "name": "Register admin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        -60
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Route update').item.json.chat_id }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "839302b9-36de-4e77-94ba-b1dbd78d1ea0",
+      "name": "Reply to admin",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        940,
+        -60
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/start_confirmation",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_order_number: $json.order_number, p_chat_id: $json.chat_id }) }}",
+        "options": {}
+      },
+      "id": "2f3b75d3-c387-4651-b638-f64f2d50df18",
+      "name": "Link customer + load order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        120
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "13dc2899-79d3-44fa-91c2-23b3c8b0e19d",
+              "leftValue": "={{ $json.ask }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "2c1277c8-75cd-471f-98f4-7505ac9364a6",
+      "name": "Needs confirmation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1180,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Route update').item.json.chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        },
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Confirm order",
+                    "additionalFields": {
+                      "callback_data": "=confirm:{{ $json.order_number }}"
+                    }
+                  },
+                  {
+                    "text": "❌ Cancel order",
+                    "additionalFields": {
+                      "callback_data": "=cancel:{{ $json.order_number }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "id": "f8ef352f-af10-4014-9855-e2c9dd43cad1",
+      "name": "Send Confirm/Cancel buttons",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1420,
+        60
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Route update').item.json.chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "5de04c0b-0cfc-4632-b678-b0e9b43fd65c",
+      "name": "Send order status",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1420,
+        240
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/link_by_phone",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_chat_id: $json.chat_id, p_phone: $json.phone, p_verified: $json.verified }) }}",
+        "options": {}
+      },
+      "id": "b210ce41-d00c-4f17-bdf2-94a34cab2228",
+      "name": "Link by phone",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        320
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "47f213be-0afa-4284-947a-36bcd6fe6b10",
+              "leftValue": "={{ $json.found }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "d2a43471-7017-4fd3-956c-2a59d45e1cdf",
+      "name": "Phone matched?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        940,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Route update').item.json.chat_id }}",
+        "text": "={{ $json.text || 'Hi! 👋 I\\'m the store assistant.\\n\\nTo find your orders, please tap the 📱 button below to share your phone number.' }}",
+        "additionalFields": {
+          "appendAttribution": false
+        },
+        "replyMarkup": "replyKeyboard",
+        "replyKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "📱 Share my phone number",
+                    "additionalFields": {
+                      "request_contact": true
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "replyKeyboardOptions": {
+          "one_time_keyboard": true,
+          "resize_keyboard": true
+        }
+      },
+      "id": "4f4f7c8e-a3ba-4a7b-ba04-769bc9e6129e",
+      "name": "Ask for phone",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1180,
+        420
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/decide_order",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_order_number: $json.order_number, p_chat_id: $json.chat_id, p_action: $json.action }) }}",
+        "options": {}
+      },
+      "id": "2985b019-5ac9-41c7-a7df-c150ccd5bed2",
+      "name": "Apply decision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        560
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "resource": "callback",
+        "operation": "answerQuery",
+        "queryId": "={{ $('Route update').item.json.callback_id }}",
+        "additionalFields": {
+          "text": "={{ $json.changed ? 'Done ✅' : 'No change' }}"
+        }
+      },
+      "id": "c2661ad6-ae5a-4050-8f78-4bfc842394ea",
+      "name": "Stop button spinner",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        940,
+        560
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Route update').item.json.chat_id }}",
+        "text": "={{ $('Apply decision').item.json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "8c70c6f2-fba5-41dc-b8ec-f6a7515e8649",
+      "name": "Send decision",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1180,
+        560
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/support_context",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_chat_id: $json.chat_id }) }}",
+        "options": {}
+      },
+      "id": "7c6c2da2-5a94-48a3-82ec-018d5863686e",
+      "name": "Get context",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        780
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "56a8488d-8e56-4999-b5d5-ca888d454254",
+              "leftValue": "={{ $json.linked }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "313adb87-ec41-46df-81f1-2fed524759c8",
+      "name": "Customer known?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        940,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'openrouter/free',\n  messages: [\n    { role: 'system', content: 'You are the friendly customer support assistant of an Indian online store, chatting with a customer on Telegram.\\n\\nRULES:\\n- Use ONLY the store information and the customer\\'s orders given to you. Never invent orders, statuses, dates, prices or policies. If something is not in the information, say a team member will help.\\n- Write like a helpful human: warm, short (2-4 sentences, under 80 words), plain text, no markdown, at most one emoji.\\n- Use the customer\\'s first name when it fits.\\n\\nSTATUS MEANINGS: confirmed = being packed for shipping; pending_confirmation = waiting for the customer to confirm their Cash on Delivery order; on_hold = paused because it was not confirmed in time; cancelled = cancelled; new = just received.\\n\\nINTENTS (pick exactly one):\\n- confirm_order: the customer clearly wants to confirm / go ahead with an order that is waiting for confirmation (e.g. \"yes confirm\", \"ship it\", \"I confirm\").\\n- cancel_order: the customer clearly wants to cancel an order that is waiting for confirmation (e.g. \"cancel it\", \"I don\\'t want it\").\\n- order_status: asks about an order, delivery or tracking.\\n- return_request: wants to return or exchange something. Say a support ticket has been created and a team member will contact them within 24 hours.\\n- complaint: unhappy, damaged item, wrong item, etc. Apologise, say a support ticket has been created.\\n- general: anything else (greetings, questions about the store).\\n\\nFor confirm_order or cancel_order, set order_number to the waiting order they mean (from the pending list). If unsure which order, use general and ask.\\n\\nRespond with ONLY this JSON and nothing else:\\n{\"intent\": \"...\", \"order_number\": \"ORD... or null\", \"reply\": \"...\"}' },\n    { role: 'user', content: 'STORE INFORMATION:\\n' + ($json.store_info || 'not provided') + '\\n\\nCUSTOMER: ' + JSON.stringify($json.customer) + '\\nTHEIR ORDERS (latest first): ' + JSON.stringify($json.orders) + '\\nWAITING FOR CONFIRMATION: ' + JSON.stringify($json.pending) + '\\nRECENT CHAT (oldest first): ' + JSON.stringify(($json.history || []).map(h => ({ from: h.role, text: h.text }))) + '\\n\\nNEW MESSAGE FROM CUSTOMER: ' + $('Route update').item.json.text }\n  ]\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "45a93127-3c27-415d-9642-4818650941fe",
+      "name": "AI support",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        760
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "3",
+          "name": "Header Auth account 2"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Read the AI's JSON safely. If the AI failed, answer from the database instead.\nconst ctx = $('Get context').item.json;\nconst route = $('Route update').item.json;\nconst pending = ctx.pending || [];\nconst orders = ctx.orders || [];\n\nlet out = { intent: 'general', order_number: null, reply: '' };\nlet aiOk = false;\ntry {\n  const text = $json.choices?.[0]?.message?.content ?? '';\n  const match = text.match(/\\{[\\s\\S]*\\}/);\n  if (match) { out = { ...out, ...JSON.parse(match[0]) }; aiOk = !!out.reply; }\n} catch (e) {}\n\nconst allowed = ['confirm_order', 'cancel_order', 'order_status', 'return_request', 'complaint', 'general'];\nif (!allowed.includes(out.intent)) out.intent = 'general';\n\n// Confirm / cancel by text: only for an order that is really waiting\nlet action = null;\nif (out.intent === 'confirm_order' || out.intent === 'cancel_order') {\n  const wanted = String(out.order_number || '').toUpperCase();\n  const match = pending.find(p => String(p.order_number).toUpperCase() === wanted) || (pending.length === 1 ? pending[0] : null);\n  if (match) {\n    out.order_number = match.order_number;\n    action = out.intent === 'confirm_order' ? 'confirm' : 'cancel';\n  } else {\n    out.intent = 'general';\n    out.reply = pending.length\n      ? 'Which order do you mean? You have these waiting: ' + pending.map(p => p.order_number).join(', ') + '.'\n      : \"You don't have any orders waiting for confirmation right now. 😊\";\n  }\n}\n\n// Fallback reply straight from the database if the AI failed\nif (!out.reply) {\n  const name = ctx.customer?.name ? ctx.customer.name + ', ' : '';\n  out.reply = orders.length\n    ? 'Hi ' + name + 'your latest order ' + orders[0].order_number + ' is ' + String(orders[0].status).replace(/_/g, ' ') + '. A team member will help with anything else soon.'\n    : 'Hi! A team member will get back to you shortly.';\n}\n\n// Telegram Markdown: escape characters the AI might use\nconst safe = String(out.reply).replace(/([\\\\_*`\\[])/g, '\\\\$1');\n\nreturn { json: {\n  chat_id: route.chat_id,\n  user_text: route.text,\n  intent: out.intent,\n  order_number: out.order_number || null,\n  action,\n  ai_ok: aiOk,\n  user_text_safe: String(route.text || '').replace(/([\\\\_*`\\[])/g, '\\\\$1'),\n  reply: safe\n}};"
+      },
+      "id": "56911a98-cd9f-4b7d-ad48-19b383233baa",
+      "name": "Parse AI reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0033ab51-d2da-4f10-b3ed-9c4b4ebbe693",
+              "leftValue": "={{ !!$json.action }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "f0e42032-3914-44ed-adb5-486a6f2c960d",
+      "name": "Confirm or cancel?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1620,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/decide_order",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_order_number: $json.order_number, p_chat_id: $json.chat_id, p_action: $json.action }) }}",
+        "options": {}
+      },
+      "id": "2f55240d-ae22-40da-919c-27f191df08e8",
+      "name": "Apply decision (chat)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1860,
+        680
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Use the database's answer as the reply (it is already Telegram-safe).\nconst p = $('Parse AI reply').item.json;\nreturn { json: { ...p, reply: $json.text || p.reply } };"
+      },
+      "id": "950e1bd8-6f99-47fe-8581-bff1c9eb7d31",
+      "name": "Decision reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// One place both paths meet, so the reply is sent and saved the same way.\nreturn { json: $json };"
+      },
+      "id": "f11b23bb-a243-4a00-a830-3c0d0c784451",
+      "name": "Final reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "d439f0a1-a998-479d-b8ee-9d36d482b16c",
+      "name": "Send reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2520,
+        780
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/save_support_turn",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p: $('Final reply').item.json }) }}",
+        "options": {}
+      },
+      "id": "84f78290-68ad-4478-8d22-139e4eae30d0",
+      "name": "Save conversation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2740,
+        780
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5be4cd74-eed9-43ec-ac8e-545ccbea72f1",
+              "leftValue": "={{ !!$json.ticket_id && !!$json.admin_chat_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "328dcce0-4953-499a-8a6e-41e1be477309",
+      "name": "Ticket created?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2960,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.admin_chat_id }}",
+        "text": "={{ '🎫 *New ' + $('Final reply').item.json.intent.replace('_', ' ') + ' ticket #' + $json.ticket_id + '*' + ($('Final reply').item.json.order_number ? '\\nOrder: ' + $('Final reply').item.json.order_number : '') + '\\nCustomer said: ' + $('Final reply').item.json.user_text_safe }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "6cf8380c-a0cd-4172-9018-700c4aabac1b",
+      "name": "Alert admin about ticket",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3180,
+        760
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Route update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route update": {
+      "main": [
+        [
+          {
+            "node": "Type of update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Type of update": {
+      "main": [
+        [
+          {
+            "node": "Register admin",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Link customer + load order",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Link by phone",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Apply decision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Register admin": {
+      "main": [
+        [
+          {
+            "node": "Reply to admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Link customer + load order": {
+      "main": [
+        [
+          {
+            "node": "Needs confirmation?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs confirmation?": {
+      "main": [
+        [
+          {
+            "node": "Send Confirm/Cancel buttons",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send order status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Link by phone": {
+      "main": [
+        [
+          {
+            "node": "Phone matched?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Phone matched?": {
+      "main": [
+        [
+          {
+            "node": "Needs confirmation?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask for phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply decision": {
+      "main": [
+        [
+          {
+            "node": "Stop button spinner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stop button spinner": {
+      "main": [
+        [
+          {
+            "node": "Send decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get context": {
+      "main": [
+        [
+          {
+            "node": "Customer known?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer known?": {
+      "main": [
+        [
+          {
+            "node": "AI support",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask for phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI support": {
+      "main": [
+        [
+          {
+            "node": "Parse AI reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI reply": {
+      "main": [
+        [
+          {
+            "node": "Confirm or cancel?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm or cancel?": {
+      "main": [
+        [
+          {
+            "node": "Apply decision (chat)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Final reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply decision (chat)": {
+      "main": [
+        [
+          {
+            "node": "Decision reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision reply": {
+      "main": [
+        [
+          {
+            "node": "Final reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final reply": {
+      "main": [
+        [
+          {
+            "node": "Send reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send reply": {
+      "main": [
+        [
+          {
+            "node": "Save conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save conversation": {
+      "main": [
+        [
+          {
+            "node": "Ticket created?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ticket created?": {
+      "main": [
+        [
+          {
+            "node": "Alert admin about ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

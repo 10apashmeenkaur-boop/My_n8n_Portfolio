@@ -1,0 +1,187 @@
+{
+  "name": "05 - Error Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 05 - Error handler\nRuns automatically when any workflow that uses it fails.\nLogs the failure to `failed_runs` and alerts the admin on Telegram.\n\nSet it in each workflow: **... menu > Settings > Error workflow > 05 - Error Handler**.",
+        "height": 220,
+        "width": 400,
+        "color": 5
+      },
+      "id": "d1b64a90-70ef-4fbd-b263-cf3f1fc82e11",
+      "name": "Note f90478",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        -40
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "2009cf07-ac88-4dba-b28e-02e2306c0cf2",
+      "name": "When a workflow fails",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n tells us which workflow and node failed. Shape it for the database.\nconst e = $json;\nreturn { json: { p: {\n  workflow: e.workflow?.name || 'unknown',\n  node: e.execution?.lastNodeExecuted || 'unknown',\n  error: e.execution?.error?.message || 'Unknown error',\n  payload: {\n    execution_id: e.execution?.id || null,\n    url: e.execution?.url || null,\n    mode: e.execution?.mode || null\n  }\n}}};"
+      },
+      "id": "337b0a63-8c78-45e4-a0bd-509b60066d12",
+      "name": "Format error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/log_failure",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p: $json.p }) }}",
+        "options": {}
+      },
+      "id": "d7c4c8d9-145a-4aa4-a0e8-afb7ec4c4ebc",
+      "name": "Log to failed_runs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7699f440-985b-4ff0-8597-46cfc7bbb1bb",
+              "leftValue": "={{ !!$json.admin_chat_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "62c98276-be59-4e9e-8d74-99d8f5eea3eb",
+      "name": "Admin registered?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.admin_chat_id }}",
+        "text": "={{ 'Workflow failed: ' + $('Format error').item.json.p.workflow + '\\nNode: ' + $('Format error').item.json.p.node + '\\nError: ' + $('Format error').item.json.p.error }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "c2550979-bd95-4f8a-84e2-8038b1d0c847",
+      "name": "Alert admin",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        880,
+        180
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "When a workflow fails": {
+      "main": [
+        [
+          {
+            "node": "Format error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format error": {
+      "main": [
+        [
+          {
+            "node": "Log to failed_runs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to failed_runs": {
+      "main": [
+        [
+          {
+            "node": "Admin registered?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Admin registered?": {
+      "main": [
+        [
+          {
+            "node": "Alert admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

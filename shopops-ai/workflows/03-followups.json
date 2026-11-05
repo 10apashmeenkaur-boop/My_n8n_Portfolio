@@ -1,0 +1,251 @@
+{
+  "name": "03 - Follow-ups",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 03 - Follow-ups (every 5 min)\nAsks Supabase what needs a message right now:\n- new risky COD order: alert admin with the customer's confirmation link\n- no answer after `reminder_after_minutes`: one reminder with buttons\n- no answer after `hold_after_minutes`: order goes ON HOLD, admin is told\n\nEach task is marked done in the same database step, so nothing is sent twice.",
+        "height": 280,
+        "width": 400,
+        "color": 5
+      },
+      "id": "6f613e63-debf-4bc5-8fc5-b57f941c753f",
+      "name": "Note 45ba2c",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "a94bf9bf-a3c3-417b-be8e-b8a219b79d19",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/followup_tasks",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "id": "bc9f9933-9322-4560-b98d-1b93af414d36",
+      "name": "Get follow-up tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// The database returns { tasks: [...] }. Turn each task into its own item.\nconst tasks = $input.first().json.tasks || [];\nreturn tasks.map(t => ({ json: t }));"
+      },
+      "id": "e75a750a-2ef5-4154-a94c-05be4fa9c7e4",
+      "name": "One item per task",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b91ef4b8-3fff-41cd-840c-2cf74e34ffb8",
+              "leftValue": "={{ $json.buttons }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "48aed6a3-78e4-41d9-a077-58e182190b58",
+      "name": "Needs buttons?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        },
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Confirm order",
+                    "additionalFields": {
+                      "callback_data": "=confirm:{{ $json.order_number }}"
+                    }
+                  },
+                  {
+                    "text": "❌ Cancel order",
+                    "additionalFields": {
+                      "callback_data": "=cancel:{{ $json.order_number }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "id": "8e71af79-769b-4583-a09c-73e2d169a0ed",
+      "name": "Send reminder with buttons",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        100
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "a46bc8b1-b30d-4bc3-ae81-0ebc7ba13f43",
+      "name": "Send message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Get follow-up tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get follow-up tasks": {
+      "main": [
+        [
+          {
+            "node": "One item per task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per task": {
+      "main": [
+        [
+          {
+            "node": "Needs buttons?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs buttons?": {
+      "main": [
+        [
+          {
+            "node": "Send reminder with buttons",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

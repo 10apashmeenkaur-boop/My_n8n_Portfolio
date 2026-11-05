@@ -1,0 +1,239 @@
+{
+  "name": "04 - Daily Report",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 04 - Daily report (9 PM)\nSQL works out the day's numbers, the AI adds a 2-line insight, and the admin gets it on Telegram.\nIf the AI is down, the numbers are still sent.\n\nTo test now: click **Execute workflow**.",
+        "height": 220,
+        "width": 400,
+        "color": 5
+      },
+      "id": "5ef4a4bb-b84c-419a-b6af-ec8c455ba9d6",
+      "name": "Note d4673f",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 21 * * *"
+            }
+          ]
+        }
+      },
+      "id": "e7897569-c821-47e3-826c-43b94bc7e55e",
+      "name": "Every day at 9 PM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/daily_report",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "id": "31e89798-f40c-4abd-912c-10c48d16f621",
+      "name": "Get daily numbers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6a231d34-3616-4cce-a858-4157d1b2b35d",
+              "leftValue": "={{ !!$json.admin_chat_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "40ee6746-c3f3-466d-88e3-ca817711fe22",
+      "name": "Admin registered?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'openrouter/free',\n  messages: [\n    { role: 'system', content: 'You help the owner of a small Indian online store. Given today\\'s numbers, write exactly 2 short sentences: what stands out, and one practical action. Plain text, no markdown, no greeting.' },\n    { role: 'user', content: JSON.stringify($json) }\n  ]\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "aca5aa5c-3a97-4dd1-8fed-ee7eed55ea57",
+      "name": "AI insight",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "3",
+          "name": "OpenRouter"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Build the report. If the AI summary failed, send the numbers alone.\nconst s = $('Get daily numbers').item.json;\nconst ai = ($json.choices?.[0]?.message?.content || '').trim();\n\nconst lines = [\n  'ShopOps daily report - ' + s.date,\n  '',\n  'Orders today: ' + s.orders,\n  'Confirmed: ' + s.confirmed + ' (Rs ' + s.revenue_confirmed + ')',\n  'Waiting for confirmation: ' + s.pending_confirmation,\n  'Cancelled: ' + s.cancelled + ' | On hold: ' + s.on_hold,\n  'Risky COD value stopped: Rs ' + s.cod_value_stopped,\n  'Open support tickets: ' + s.open_tickets,\n  'Failed workflow runs: ' + s.failed_runs_today\n];\nif (ai) lines.push('', 'Insight: ' + ai);\n\nreturn { json: { chat_id: s.admin_chat_id, text: lines.join('\\n') } };"
+      },
+      "id": "6cdfbb5b-ed55-4c01-9fcd-2b62f6d83ec3",
+      "name": "Build report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "1c27bc8f-9aeb-4446-b17f-636f5f5137fa",
+      "name": "Send to admin",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1100,
+        180
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Every day at 9 PM": {
+      "main": [
+        [
+          {
+            "node": "Get daily numbers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get daily numbers": {
+      "main": [
+        [
+          {
+            "node": "Admin registered?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Admin registered?": {
+      "main": [
+        [
+          {
+            "node": "AI insight",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI insight": {
+      "main": [
+        [
+          {
+            "node": "Build report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build report": {
+      "main": [
+        [
+          {
+            "node": "Send to admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

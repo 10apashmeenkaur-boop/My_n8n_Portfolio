@@ -6,6 +6,7 @@ Automation workflows I've built with [n8n](https://n8n.io). Each folder has the 
 
 | Workflow | What it does | Tools |
 |---|---|---|
+| [ShopOps AI](./shopops-ai) | Catches risky cash-on-delivery orders, gets customers to confirm on Telegram in plain language, AI support with tickets, daily reports and central error handling (5 workflows) | Supabase (Postgres), Telegram Bot API, OpenRouter LLM, Code nodes |
 | [**Meta Ad Analyser**](./meta-ad-analyser) | Scrapes a brand's live ads from the Meta Ad Library, has Gemini watch and listen to the top video ads (hook / body / CTA), ranks them by performance signals + AI creative score, and exports an Excel sheet and a PDF-ready report. | Apify, Google Gemini, Code nodes |
 
 ## Using a workflow
