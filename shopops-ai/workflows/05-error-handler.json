@@ -45,7 +45,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/log_failure",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/log_failure",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,

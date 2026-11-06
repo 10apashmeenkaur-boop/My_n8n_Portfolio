@@ -4,8 +4,6 @@
 
 Built with **n8n**, **Supabase (Postgres)**, **Telegram** and **LLMs via OpenRouter**.
 
->
-
 ![Architecture](docs/architecture.png)
 
 ---
@@ -114,7 +112,7 @@ shopops-ai/
    - `Supabase account` — Supabase API (project URL + secret / service_role key)
    - `Telegram account` — Telegram API (token from @BotFather)
    - `OpenRouter` — Header Auth (`Authorization: Bearer sk-or-...`)
-3. **Import** each file in `workflows/` (n8n → Create workflow → ⋯ → Import from file) and pick the credentials in any node that shows a warning.
+3. **Import** each file in `workflows/` (n8n → Create workflow → ⋯ → Import from file) and pick the credentials in any node that shows a warning. In the HTTP Request nodes, replace `YOUR_PROJECT_REF` in `https://YOUR_PROJECT_REF.supabase.co` with your Supabase project ref.
 4. **Error workflow:** in workflows 01–04, open ⋯ → Settings → Error workflow → `05 - Error Handler`.
 5. **Publish** workflows 01–05. Workflow 02 needs a public HTTPS URL (n8n's `WEBHOOK_URL`, e.g. via Cloudflare Tunnel).
 6. Send `/admin` to your bot once to register yourself as the store owner.

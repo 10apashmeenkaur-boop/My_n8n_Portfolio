@@ -171,7 +171,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/set_admin",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/set_admin",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,
@@ -226,7 +226,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/start_confirmation",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/start_confirmation",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,
@@ -365,7 +365,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/decide_order",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/decide_order",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,
@@ -445,7 +445,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/support_context",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/support_context",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,
@@ -546,7 +546,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/save_support_turn",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/save_support_turn",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,

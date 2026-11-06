@@ -51,7 +51,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/create_order",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/create_order",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,
@@ -161,7 +161,7 @@
     {
       "parameters": {
         "method": "PATCH",
-        "url": "=https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/orders?id=eq.{{ $json.id }}",
+        "url": "=https://YOUR_PROJECT_REF.supabase.co/rest/v1/orders?id=eq.{{ $json.id }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendHeaders": true,

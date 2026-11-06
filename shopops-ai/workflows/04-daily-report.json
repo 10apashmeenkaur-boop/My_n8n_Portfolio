@@ -40,7 +40,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/daily_report",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/daily_report",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,

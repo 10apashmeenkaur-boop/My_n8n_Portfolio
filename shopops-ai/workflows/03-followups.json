@@ -40,7 +40,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://sedqnrdozqoxqhboogdw.supabase.co/rest/v1/rpc/followup_tasks",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/followup_tasks",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,
